@@ -23,9 +23,13 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCKERFILE="${REPO_ROOT}/Dockerfile"
-GHCR_USER="${GHCR_USER:-new-usemame}"
-MIRROR_PATH="new-usemame/pbs-cache"            # ghcr.io/<this>
-MIRROR_REPO="ghcr.io/${MIRROR_PATH}"
+# Workflows pass the same image to this producer and Dockerfile consumers.
+GHCR_USER="${GHCR_USER:-${GITHUB_ACTOR:-new-usemame}}"
+MIRROR_REPO="${PBS_MIRROR_IMAGE:-ghcr.io/${GITHUB_REPOSITORY_OWNER:-new-usemame}/pbs-cache}"
+case "$MIRROR_REPO" in
+  ghcr.io/*/*) MIRROR_PATH="${MIRROR_REPO#ghcr.io/}" ;;
+  *) echo "ERROR: PBS_MIRROR_IMAGE must be ghcr.io/<owner>/<package>" >&2; exit 1 ;;
+esac
 
 read_arg() { grep -E "^ARG ${1}=" "$DOCKERFILE" | head -1 | cut -d= -f2; }
 PYTHON_VERSION="$(read_arg PYTHON_VERSION)"

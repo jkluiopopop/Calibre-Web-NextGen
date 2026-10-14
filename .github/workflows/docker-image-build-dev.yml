@@ -50,6 +50,9 @@ concurrency:
 # with "denied: installation not allowed to Write organization
 # package". Mirrors the release workflow minus id-token/attestations,
 # which the dev workflow explicitly disables (provenance: false).
+env:
+  PBS_MIRROR_IMAGE: ghcr.io/${{ github.repository_owner }}/pbs-cache
+
 permissions:
   actions: read
   contents: read
@@ -164,6 +167,7 @@ jobs:
       - name: Ensure python-build-standalone mirror exists
         env:
           GHCR_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         run: bash scripts/ensure-python-mirror.sh
 
   # --------------------------------------------------------------------------------
@@ -297,6 +301,7 @@ jobs:
             BUILD_DATE=${{ github.event.repository.updated_at }}
             VERSION=DEV_BUILD-${{ env.IMAGE_TAG }}-${{ vars.CURRENT_DEV_BUILD_NUM }}
             PBS_SOURCE=${{ github.event.pull_request.head.repo.fork == true && 'upstream' || 'ghcr' }}
+            PBS_MIRROR_IMAGE=${{ env.PBS_MIRROR_IMAGE }}
 
       # --- 4. Export Digest for Merge Job ---
       - name: Export digest
@@ -451,6 +456,7 @@ jobs:
             BUILD_DATE=${{ github.event.repository.updated_at }}
             VERSION=DEV_BUILD-${{ env.IMAGE_TAG }}-${{ vars.CURRENT_DEV_BUILD_NUM }}
             PBS_SOURCE=${{ github.event.pull_request.head.repo.fork == true && 'upstream' || 'ghcr' }}
+            PBS_MIRROR_IMAGE=${{ env.PBS_MIRROR_IMAGE }}
 
       # --- 4. Rotate Cache (Prevent Infinite Growth) ---
       - name: Move cache

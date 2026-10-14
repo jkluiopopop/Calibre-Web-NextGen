@@ -20,7 +20,7 @@ ARG KEPUBIFY_RELEASE=v4.0.4
 #   upstream (default) — download them from the public GitHub release CDN. Works
 #     for anyone with a checkout and no credentials, which is what a contributor
 #     running `docker build .` has.
-#   ghcr — COPY them from ghcr.io/new-usemame/pbs-cache, our own mirror of those
+#   ghcr — COPY them from PBS_MIRROR_IMAGE, the configured mirror of those
 #     exact artifacts. That CDN intermittently 404s the Actions egress and broke
 #     every image build, so CI passes PBS_SOURCE=ghcr and pulls from the same
 #     registry the base images come from. The mirror is built/refreshed by
@@ -36,9 +36,10 @@ ARG KEPUBIFY_RELEASE=v4.0.4
 # TARGETARCH, so it cannot build this image regardless of PBS_SOURCE.
 # See notes/PYTHON-BUILD-MIRROR.md.
 ARG PBS_SOURCE=upstream
+ARG PBS_MIRROR_IMAGE=ghcr.io/new-usemame/pbs-cache
 
-FROM ghcr.io/new-usemame/pbs-cache:cpython-${PYTHON_VERSION}-${PYTHON_BUILD_STANDALONE_RELEASE} AS pbs_ghcr
-FROM ghcr.io/new-usemame/pbs-cache:kepubify-${KEPUBIFY_RELEASE} AS kepubify_ghcr
+FROM ${PBS_MIRROR_IMAGE}:cpython-${PYTHON_VERSION}-${PYTHON_BUILD_STANDALONE_RELEASE} AS pbs_ghcr
+FROM ${PBS_MIRROR_IMAGE}:kepubify-${KEPUBIFY_RELEASE} AS kepubify_ghcr
 
 FROM ghcr.io/linuxserver/baseimage-ubuntu:noble AS pbs_upstream
 ARG PYTHON_VERSION

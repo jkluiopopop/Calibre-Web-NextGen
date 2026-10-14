@@ -30,6 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  PBS_MIRROR_IMAGE: ghcr.io/${{ github.repository_owner }}/pbs-cache
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -46,6 +47,7 @@ jobs:
       - name: Ensure python-build-standalone mirror exists
         env:
           GHCR_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         run: bash scripts/ensure-python-mirror.sh
 
   # ------------------------------------------------------------------
@@ -132,6 +134,7 @@ jobs:
             BUILD_DATE=${{ github.event.release.created_at || github.event.repository.updated_at }}
             VERSION=${{ steps.ver.outputs.tag }}
             PBS_SOURCE=ghcr
+            PBS_MIRROR_IMAGE=${{ env.PBS_MIRROR_IMAGE }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
