@@ -1143,7 +1143,7 @@ def test_fork_prs_run_the_build_job_but_do_not_hard_gate_on_it_yet():
     )
 
     coe = str(job.get("continue-on-error", ""))
-    assert "fork" in coe, (
+    assert "head.repo.full_name" in coe, (
         "the hard gate must exclude fork PRs while mirror access from a fork "
         "is unverified (#1263)"
     )
@@ -1171,7 +1171,7 @@ def test_gate_hardness_agrees_between_the_job_and_the_summary():
     # Both must key on the build output AND both must carve out forks.
     for name, expr in (("continue-on-error", coe), ("IS_BUILD_PR", is_build)):
         assert "needs.changed_paths.outputs.build" in expr, f"{name} ignores the build output"
-        assert "fork" in expr, (
+        assert "head.repo.full_name" in expr, (
             f"{name} does not carve out fork PRs, but the other one does — the "
             "job and the summary would disagree about what is gated"
         )
@@ -1312,7 +1312,7 @@ def test_e2e_actually_blocks_frontend_prs():
         "breaks the SPA reports a green job and merges. That is the exact "
         "hole #1130 exists to close."
     )
-    assert "fork" in coe, (
+    assert "head.repo.full_name" in coe, (
         "the e2e advisory carve-out must be scoped to fork PRs (which have no "
         "run history to justify hard-gating), not to all pull requests"
     )
@@ -1457,13 +1457,13 @@ def test_fork_prs_run_e2e_but_do_not_hard_gate_on_it_yet():
     assert "outputs.frontend == 'true' ||" in condition, (
         "frontend PRs must enter E2E before the concurrency-specific fork carve-out"
     )
-    assert "outputs.concurrency == 'true'" in condition and "fork != true" in condition, (
+    assert "outputs.concurrency == 'true'" in condition and "head.repo.full_name == github.repository" in condition, (
         "only concurrency-triggered image builds exclude forks; frontend fork PRs "
         "must still run the existing digest-pinned overlay lane"
     )
 
     coe = str(job.get("continue-on-error", ""))
-    assert "fork" in coe, (
+    assert "head.repo.full_name" in coe, (
         "fork PRs must stay advisory until a real fork run shows the "
         "image-pull + bundle-overlay path works without repo secrets"
     )

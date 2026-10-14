@@ -41,15 +41,26 @@ KEPUBIFY_RELEASE="$(read_arg KEPUBIFY_RELEASE)"
 # Authenticated existence check — the package is private, so an anonymous token
 # can't see it and would always report "missing" (needless rebuild).
 mirror_exists() {  # mirror_exists <tag>
-  local tag="$1" tok
+  local tag="$1" tok status
+  local auth=()
   if [ -n "${GHCR_TOKEN:-}" ]; then
-    tok="$(curl -s -u "${GHCR_USER}:${GHCR_TOKEN}" "https://ghcr.io/token?scope=repository:${MIRROR_PATH}:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
-  else
-    tok="$(curl -s "https://ghcr.io/token?scope=repository:${MIRROR_PATH}:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+    auth=(-u "${GHCR_USER}:${GHCR_TOKEN}")
   fi
-  curl -sf -o /dev/null -H "Authorization: Bearer ${tok}" \
+  tok="$(curl -fsS --connect-timeout 30 "${auth[@]}" \
+    "https://ghcr.io/token?scope=repository:${MIRROR_PATH}:pull" \
+    | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^" ]*\)".*/\1/p')" \
+    || { echo "ERROR: GHCR token request failed for ${MIRROR_PATH}" >&2; exit 2; }
+  [ -n "$tok" ] || { echo "ERROR: GHCR returned no token" >&2; exit 2; }
+  status="$(curl -sS --connect-timeout 30 -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer ${tok}" \
     -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json' \
-    "https://ghcr.io/v2/${MIRROR_PATH}/manifests/${tag}"
+    "https://ghcr.io/v2/${MIRROR_PATH}/manifests/${tag}")" \
+    || { echo "ERROR: GHCR manifest request failed for ${MIRROR_PATH}:${tag}" >&2; exit 2; }
+  case "$status" in
+    200) return 0 ;;
+    404) return 1 ;;
+    *) echo "ERROR: GHCR manifest check returned HTTP ${status} for ${MIRROR_PATH}:${tag}" >&2; exit 2 ;;
+  esac
 }
 
 ensured_login=0

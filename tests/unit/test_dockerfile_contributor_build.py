@@ -59,11 +59,10 @@ PRIVATE_MIRROR = "ghcr.io/new-usemame/pbs-cache"
 # `docker build .` already uses.
 #
 # Every non-fork context still resolves to `ghcr`: on pushes, tags and
-# `workflow_dispatch` there is no `pull_request` payload, so the left operand is
-# null, `null == true` is false, and the `||` returns `'ghcr'`. Same-repo PRs
-# have `fork == false`.
+# `workflow_dispatch` the event guard is false and the `||` returns `'ghcr'`.
+# Same-repository PRs also use the mirror, even when this repository is a fork.
 FORK_AWARE_PBS_SOURCE = (
-    "PBS_SOURCE=${{ github.event.pull_request.head.repo.fork == true "
+    "PBS_SOURCE=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository "
     "&& 'upstream' || 'ghcr' }}"
 )
 
@@ -236,7 +235,7 @@ def _fork_unreachable_through_classifier(
     fork_expr = re.sub(
         r"\s+", "", str((classifier_step.get("env") or {}).get("IS_FORK") or "")
     )
-    if fork_expr != "${{github.event.pull_request.head.repo.fork==true}}":
+    if fork_expr != "${{github.event_name=='pull_request'&&github.event.pull_request.head.repo.full_name!=github.repository}}":
         return f"IS_FORK is not sourced from the PR head repository: {fork_expr!r}"
 
     script = str(classifier_step.get("run") or "").replace(

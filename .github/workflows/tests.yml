@@ -37,6 +37,9 @@ concurrency:
   # (F-493b49). Runs on main queue behind each other instead.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  PBS_MIRROR_IMAGE: ghcr.io/${{ github.repository_owner }}/pbs-cache
+
 jobs:
   # Regenerate on PRs and after every merge. Drift is visible in the summary
   # and downloadable artifacts, without requiring contributors to commit JSON.
@@ -98,6 +101,12 @@ jobs:
           # shallow checkout would silently fall back to only the committed
           # What's New ledger and exercise less history than normal CI can.
           fetch-depth: 0
+
+      # Forks do not inherit tags. Fetch genuine upstream release refs without
+      # forcing conflicting tags; the test still filters to ancestors of HEAD.
+      - name: Fetch upstream release history
+        if: github.repository != 'new-usemame/Calibre-Web-NextGen'
+        run: git fetch --no-tags https://github.com/new-usemame/Calibre-Web-NextGen.git 'refs/tags/v*:refs/tags/v*'
 
       - name: Remove Python bytecode and pycache
         run: |
@@ -213,17 +222,9 @@ jobs:
             --timeout=120 \
             --timeout-method=thread
       
-      - name: Comment PR with results
-        uses: actions/github-script@v9
-        if: github.event_name == 'pull_request' && failure()
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '⚠️ **Fast tests failed!** Please check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and fix before merging.'
-            })
+      - name: Summarize fast test failure
+        if: failure()
+        run: echo 'Fast tests failed. See the failing test step above before merging.' >> "$GITHUB_STEP_SUMMARY"
 
   # ============================================================================
   # JOB 1b: Frontend Build (SPA bundle)
@@ -267,6 +268,29 @@ jobs:
   # Duration: ~15-20 minutes
   # Purpose: Validate real-world behavior in Docker container
   # ============================================================================
+  prepare-test-mirror:
+    name: Prepare dependency mirrors for tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [changed_paths]
+    if: >-
+      always() && !cancelled() &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' ||
+       (github.event_name == 'workflow_dispatch' && inputs.run_integration) ||
+       (github.event_name == 'pull_request' &&
+        (needs.changed_paths.outputs.build == 'true' || contains(github.event.pull_request.labels.*.name, 'safe-tier-2'))))
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Ensure dependency mirrors exist
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: bash scripts/ensure-python-mirror.sh
+
   integration-tests:
     name: Integration Tests (Docker)
     runs-on: ubuntu-latest
@@ -275,7 +299,7 @@ jobs:
       packages: read   # pull the private pbs-cache mirror images the Dockerfile COPYs from
     # `changed_paths` supplies the `build` output below. It is PR-only, so
     # every condition here is written to survive it being skipped.
-    needs: [changed_paths]
+    needs: [changed_paths, prepare-test-mirror]
     # Tier-2 auto-merge requires Integration Tests as a hard gate — small
     # code changes still need to clear the actual ingest/Calibre flow.
     # We keep the broad-PR exemption: tier-1 (.po / *.md) PRs and PRs
@@ -301,9 +325,9 @@ jobs:
     # the whole reason the mirror exists: hard-gating now would trade a
     # guaranteed 403 block for an occasional flake block, on exactly the
     # community PRs this is meant to unblock. Promote to a hard gate (drop the
-    # `head.repo.fork != true` clause) once fork runs have shown they build
+    # same-repository clause) once fork runs have shown they build
     # reliably.
-    continue-on-error: ${{ !(contains(github.event.pull_request.labels.*.name, 'safe-tier-2') || (needs.changed_paths.outputs.build == 'true' && github.event.pull_request.head.repo.fork != true)) }}
+    continue-on-error: ${{ !(contains(github.event.pull_request.labels.*.name, 'safe-tier-2') || (needs.changed_paths.outputs.build == 'true' && github.event.pull_request.head.repo.full_name == github.repository)) }}
     # Run on:
     # - merge to main / dev (advisory)
     # - manual dispatch with flag
@@ -328,6 +352,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
       
+      - name: Check mirror preparation
+        if: needs.prepare-test-mirror.result == 'failure' || needs.prepare-test-mirror.result == 'cancelled'
+        run: |
+          echo "::error::Dependency mirror preparation failed; inspect prepare-test-mirror."
+          exit 1
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v7
         with:
@@ -376,10 +406,11 @@ jobs:
           # succeeds and the manifest HEAD still 403s, failing the build at the
           # Python base image before the Dockerfile is read (#1263). Everything
           # else — pushes, tags, workflow_dispatch, same-repo PRs — has no
-          # `pull_request` payload or `fork == false`, so it still resolves to
+          # `pull_request` payload or a matching head repository, so it still resolves to
           # `ghcr`. Pinned byte-for-byte by tests/unit/test_dockerfile_contributor_build.py.
           build-args: |
-            PBS_SOURCE=${{ github.event.pull_request.head.repo.fork == true && 'upstream' || 'ghcr' }}
+            PBS_SOURCE=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'upstream' || 'ghcr' }}
+            PBS_MIRROR_IMAGE=${{ env.PBS_MIRROR_IMAGE }}
 
       - name: Set test UID/GID
         run: |
@@ -536,7 +567,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.run_e2e) ||
       (github.event_name == 'pull_request' && (
         needs.changed_paths.outputs.frontend == 'true' ||
-        (needs.changed_paths.outputs.concurrency == 'true' && github.event.pull_request.head.repo.fork != true)
+        (needs.changed_paths.outputs.concurrency == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
       ))
       )
     # Main/PR dev-image producers may consume their full 5m classify + 15m
@@ -553,7 +584,7 @@ jobs:
     # trade integration-tests documents. Forks still RUN the suite and the
     # result is still surfaced; only the block is deferred. Promote (drop the
     # fork clause) once a real fork run shows the path works.
-    continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
+    continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
     timeout-minutes: 180
     permissions:
       actions: read    # inspect the exact Build & Push producer before another poll
@@ -614,7 +645,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            PBS_SOURCE=${{ github.event.pull_request.head.repo.fork == true && 'upstream' || 'ghcr' }}
+            PBS_SOURCE=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'upstream' || 'ghcr' }}
+            PBS_MIRROR_IMAGE=${{ env.PBS_MIRROR_IMAGE }}
 
       - name: Resolve image to test
         id: img
@@ -622,7 +654,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          image="ghcr.io/new-usemame/calibre-web-nextgen"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
           producer_args=()
           if [[ "${{ github.event_name }}" == "pull_request" \
                   && "${{ needs.changed_paths.outputs.build }}" == "true" \
@@ -1131,14 +1163,14 @@ jobs:
           # pass. Mirrors the job's own continue-on-error: fork PRs are
           # excluded while the mirror-access question is open (#1263), so the
           # two cannot disagree about what is being gated.
-          IS_BUILD_PR: ${{ needs.changed_paths.outputs.build == 'true' && github.event.pull_request.head.repo.fork != true }}
+          IS_BUILD_PR: ${{ needs.changed_paths.outputs.build == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
           # Frontend PRs gate on the SPA e2e suite the same way (#1130). The
           # fork carve-out mirrors the e2e job's own continue-on-error, so the
           # two cannot disagree about what is being gated.
-          IS_FRONTEND_PR: ${{ needs.changed_paths.outputs.frontend == 'true' && github.event.pull_request.head.repo.fork != true }}
+          IS_FRONTEND_PR: ${{ needs.changed_paths.outputs.frontend == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
           # Concurrency/engine-shaped PRs are a hard full-stack gate. Their E2E
           # job waits for the PR head's own sha-tagged image before starting.
-          IS_CONCURRENCY_PR: ${{ needs.changed_paths.outputs.concurrency == 'true' && github.event.pull_request.head.repo.fork != true }}
+          IS_CONCURRENCY_PR: ${{ needs.changed_paths.outputs.concurrency == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
           # Every push to main runs and gates on the SPA e2e suite. Keep this
           # event-scoped so workflow_dispatch continues to honor run_e2e.
           IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

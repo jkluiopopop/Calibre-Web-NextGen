@@ -66,7 +66,11 @@ VERSION_ARGS = (
 
 @pytest.fixture(scope="module")
 def dockerfile_text() -> str:
-    return DOCKERFILE.read_text()
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    global_block = text.split("\nFROM ", 1)[0]
+    mirror = re.search(r"^ARG PBS_MIRROR_IMAGE=(ghcr\.io/[^\s:]+)$", global_block, re.MULTILINE)
+    assert mirror, "PBS_MIRROR_IMAGE must have a non-empty global GHCR default"
+    return text.replace("${PBS_MIRROR_IMAGE}", mirror.group(1))
 
 
 @pytest.fixture(scope="module")

@@ -45,7 +45,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # GITHUB_TOKEN is read-only on packages by default. Builds push to
-# ghcr.io/new-usemame/calibre-web-nextgen, so packages:write is
+# the current owner's GHCR namespace, so packages:write is
 # required. Without it the build silently failed at the GHCR push step
 # with "denied: installation not allowed to Write organization
 # package". Mirrors the release workflow minus id-token/attestations,
@@ -116,7 +116,7 @@ jobs:
           CONCURRENCY: ${{ steps.detect.outputs.concurrency }}
           IMAGE: ${{ steps.detect.outputs.image }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          IS_FORK: ${{ github.event.pull_request.head.repo.fork == true }}
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             {
@@ -149,7 +149,7 @@ jobs:
 
   # --------------------------------------------------------------------------------
   # JOB 0: Ensure the python-build-standalone GHCR mirror exists before building.
-  # The image build COPYs Python from ghcr.io/new-usemame/pbs-cache instead of the
+  # The image build COPYs Python from PBS_MIRROR_IMAGE instead of the
   # flaky GitHub release CDN. This job (idempotent — a no-op when the mirror is
   # already present) builds it the first time after a Python bump. See
   # scripts/ensure-python-mirror.sh + notes/PYTHON-BUILD-MIRROR.md.
@@ -300,7 +300,7 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.repository.updated_at }}
             VERSION=DEV_BUILD-${{ env.IMAGE_TAG }}-${{ vars.CURRENT_DEV_BUILD_NUM }}
-            PBS_SOURCE=${{ github.event.pull_request.head.repo.fork == true && 'upstream' || 'ghcr' }}
+            PBS_SOURCE=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'upstream' || 'ghcr' }}
             PBS_MIRROR_IMAGE=${{ env.PBS_MIRROR_IMAGE }}
 
       # --- 4. Export Digest for Merge Job ---
@@ -455,7 +455,7 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.repository.updated_at }}
             VERSION=DEV_BUILD-${{ env.IMAGE_TAG }}-${{ vars.CURRENT_DEV_BUILD_NUM }}
-            PBS_SOURCE=${{ github.event.pull_request.head.repo.fork == true && 'upstream' || 'ghcr' }}
+            PBS_SOURCE=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'upstream' || 'ghcr' }}
             PBS_MIRROR_IMAGE=${{ env.PBS_MIRROR_IMAGE }}
 
       # --- 4. Rotate Cache (Prevent Infinite Growth) ---

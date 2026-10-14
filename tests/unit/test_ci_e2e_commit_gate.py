@@ -151,7 +151,7 @@ def test_workflows_wire_nonfork_concurrency_to_a_commit_image_and_hard_gate():
     dev = DEV_WORKFLOW.read_text(encoding="utf-8")
 
     assert "outputs.concurrency == 'true'" in tests
-    assert "github.event.pull_request.head.repo.fork != true" in tests
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in tests
     assert "IS_CONCURRENCY_PR" in tests
     assert 'needs.e2e-tests.result }}" != "success"' in tests
     assert "sha-$SUBJECT_SHA" in tests
