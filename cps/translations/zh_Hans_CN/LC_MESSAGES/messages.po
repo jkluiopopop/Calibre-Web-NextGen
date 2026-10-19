@@ -11254,6 +11254,30 @@ msgid ""
 "after the next sync."
 msgstr "移除此图片吗？下次同步后将恢复您之前的 KOReader 休眠画面设置。"
 
+#: cps/spa_strings.py
+msgid "Image fit"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Automatic"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Fill the screen"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Show the whole image"
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Automatic fills the screen when only a thin edge would be cut off."
+msgstr ""
+
+#: cps/spa_strings.py
+msgid "Could not change image fit. Try again."
+msgstr ""
+
 #: cps/tag_hierarchy.py
 msgid "Unnamed tag"
 msgstr "未命名标签"
